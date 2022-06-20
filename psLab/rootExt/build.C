@@ -1,0 +1,28 @@
+
+{
+
+  // THIS PROJECT
+
+  // for now, all code is in the public... we can move compile-only to private
+  // later...
+  TString projectSrcDir = "rootExt/public";
+
+  // LIST OF LIBRARIES
+
+  vector<string> buildList;
+  buildList.push_back("SpaceAngle_rad.h");
+  buildList.push_back("ModDistanceFn.h");
+  buildList.push_back("generalfunctions.C");
+  buildList.push_back("randomfunctions.C");
+  buildList.push_back("PValues.h");
+  buildList.push_back("CountMonitor.C");
+  buildList.push_back("root_draw_tools.C");
+  buildList.push_back("FunctionsRoot.C");
+  //buildList.push_back("MakeNewName.h");
+  buildList.push_back("TStringify.h");
+  buildList.push_back("SimpleExtractor.C");
+  buildList.push_back("TreeConverter.C");
+  buildList.push_back("TreeReader.C");
+
+  LOADSUCCESS = BasicBuild(projectSrcDir, buildList);
+}

@@ -1,0 +1,268 @@
+#include "llhSN/public/NewLlhSN.h"
+
+#include "TGraph.h"
+#include <exception>
+
+#include "rootExt/public/FunctionsRoot.h"
+#include "rootExt/public/generalfunctions.h"
+#include "rootExt/public/log_report.h"
+
+#include "llhTimeDep/public/BlockLevel.h"
+#include "llhTimeDep/public/TimePdfCollection.h"
+
+
+
+double NewLlhSNFCN::operator() (const vector<double>& par) const {
+
+  vector<SNEvent> eV = ptr->sna_->GetEvents();
+  cout << "starting (): " << eV.size() << endl;
+
+  double nSrc   = par[0];
+  double lag    = par[1];
+  double thresh = par[2];
+
+  double srcFrac = nSrc/eV.size();   // relative weight of src term
+  
+  //if (ptr->monitorLevel_>1) { cout << eV.size() << endl; }
+  
+  TimePdf * timePdf = new BlockTimePdf1();
+  timePdf->SetBlockLevels( ptr->lcFile_.c_str(), thresh );
+  timePdf->SetLivetime( ptr->GetLivetime() );
+
+  double logLambda=0.;
+  for (unsigned int i=0; i<eV.size(); ++i) {
+    double tRatio = 1.;
+    double pRatio = 1.;
+    const SNEvent event = eV[i];
+    
+    tRatio = timePdf->GetPdfValue(event.GetTime().GetMJD(),lag) * ptr->GetLivetime();
+    //cout << "tRatio: " << tRatio << endl;
+    
+    // CAN USE THIS STOPWATCH TO ISOLATE ONE PIECE OF THE LLH CALC.
+    //  stopwatch_minuitFCN_.Start(false);  //  false = don't reset
+    //pRatio = 1. / ptr->sna_.GetSimpleProbFn()->GetProbBkg(event);
+    pRatio = 1. / event.GetSimpleProbFn()->GetProbBkg(event);
+    //cout << "pRatio: " << pRatio << endl;
+  
+    logLambda += log( srcFrac * ( pRatio * tRatio - 1) + 1);
+
+    // DON'T FORGET TO STOP AFTERWARDS!
+    //    stopwatch_minuitFCN_.Stop();
+
+    if ( ptr->monitorLevel_ > 2 ) { // useful monitoring but with 
+                                    // massive event-by-event spew
+      cout << logLambda << " " << srcFrac << " " << pRatio << " " << tRatio << " " << event.GetTime().GetMJD() << " " << ptr->livetime_ << endl;
+    }
+
+  }
+
+  if (ptr->monitorLevel_>1) {
+    printf("LogLambda=%12.6lg  :  nSrc=%9.4lg  :  lag=%5.4lg  :  thresh=%5.4lg\n",
+	   logLambda, nSrc, lag, thresh);
+  }
+
+  if (timePdf) { delete timePdf; } // otherwise we'd get a memory leak
+
+  return -logLambda;   // What Minuit minimizes: -log L
+  
+}
+
+
+
+
+NewLlhSN::NewLlhSN() :
+//  optUseEnergy_(true),
+//  eMaxRatioWarnStatus_(-1),  // default -1 means warn every time
+//  optStoreRatios_(false),
+  icstatWarnLevel_(0),
+  nSrcMin_(0.),
+  srcFracMax_(0.5), // default is half of total nEvents
+  logLambdaBest_(0.),
+  nSrcBest_(0.),
+  lagBest_(0.),
+  chiSq_(0.),
+  chiSqProb_(0.),
+  nEventsTot_(0),
+  monitorLevel_(0)
+{
+  fcn_ = new NewLlhSNFCN();
+  fcn_->Point(this);
+
+  minuit_ = new TFitterMinuit();
+  minuit_->SetMinuitFCN(fcn_);
+  // minuit_ takes over fcn_, so later we only delete minuit_, not fcn_
+
+  // Call Migrad with 500 iterations maximum 
+  minuit_->SetMaxIterations(500);
+  // Set error Definition (1 for Chi square; 0.5 for negative log likelihood) 
+  minuit_->SetErrorDef(0.5); 
+  // Set Print Level (-1 no output; 1 standard output)
+  minuit_->SetPrintLevel(-1);
+
+  optParAuto_[0] = true;
+  optParAuto_[1] = true;
+  optParAuto_[2] = true;
+
+  // These start when created, so stop immediately
+  stopwatch_MaximizeLlh_.Stop();
+  stopwatch_optimize_.Stop();
+  stopwatch_minuitMigrad_.Stop();
+  stopwatch_minuitFCN_.Stop();
+}
+
+
+
+void NewLlhSN::PrepareAnalysis() {
+
+  vector<SNEvent> evList = sna_->GetEvents();
+
+  if (monitorLevel_>1) { cout << "In PrepareAnalysis(): " << evList.size() << endl; }
+
+  powRatioVect_.clear();
+  eVect_.clear();
+
+  for (int i=0; i<int(evList.size()); ++i) {
+    SNEvent event = evList[i];
+
+    double sigSpaceProb = 1.;
+    double bkgSpaceProb = event.GetSimpleProbFn()->GetProbBkg(event);
+
+    double spaceRatio = sigSpaceProb / bkgSpaceProb;
+    eVect_.push_back(event);
+    powRatioVect_.push_back(spaceRatio);
+  }
+ 
+  nEventsTot_ = eVect_.size();
+  
+  if (monitorLevel_>1) { cout << "In PrepareAnalysis(): " << eVect_.size() << endl; }
+  
+}
+
+
+void NewLlhSN::MaximizeLlh()
+{
+  //stopwatch_MaximizeLlh_.Start(false);  //  false = don't reset
+
+  //PrepareAnalysis();
+  // TO DO: BETTER HANDLING IF NO EVENTS SELECTED:
+  //assert(eVect_.size());
+
+  // Wipes out parameters (minuit crashes easily when changing existing pars)
+  minuit_->Clear();
+  minuit_->CreateMinimizer();  // default is kMigrad
+
+
+  // DEFINE PARAMETERS
+  
+  vector<SNEvent> evList = sna_->GetEvents();
+
+  if (optParAuto_[0]) {
+    double nSrcMax = srcFracMax_*evList.size();
+    nSrcMin_ = 0.;
+    minuit_->SetParameter(0, "nSrc", nSrcMax/2., 0.1, nSrcMin_, nSrcMax);
+  }
+
+  if (optParAuto_[1] ) {
+      minuit_->SetParameter(1, "lag", 0, 0.1, -30., 30.);
+  }
+
+  if (optParAuto_[2] ) {
+      minuit_->SetParameter(2, "thresh", 0, 1e-5, 0., 1e-5);
+  }
+
+  // MINIMIZE
+
+  stopwatch_minuitMigrad_.Start(false);  //  false = don't reset
+  minuit_->Minimize();
+  stopwatch_minuitMigrad_.Stop();
+
+
+ //  if (icstat <= icstatWarnLevel_) {
+//     log_warn("icstat=%d : ",icstat);
+//     if (icstat == 0) { log_warn("covar. matrix not calculated at all.\n"); }
+//     if (icstat == 1) { log_warn("covar. matrix is approx. only\n"); }
+//     if (icstat == 2) { log_warn("full covar.matrix, but forced pos-def.\n");}
+//     if (icstat == 3) { log_warn("full, accurate covariance matrix.\n");}
+//   }
+
+
+  // GET RESULTS
+
+
+  StoreLogLambdaBest();   // Set logLambdaBest_
+  nSrcBest_ = GetPar(0);
+  lagBest_ = GetPar(1);
+  threshBest_ = GetPar(2);
+
+  /* Handled in StoreLogLambdaBest(), I hope...
+
+  // fix, because minimizer may sometimes give slightly negative value instead
+  // of exact zero, which will cause probability calcultion to choke...
+  if (logLambdaBest_ < 0.) {
+    // we can always do better, since LogLambda(ns=0,gamma) = 0.
+    logLambdaBest_ = 0.;
+    nSrcBest_ = 0.;
+    gammaBest_ = 0.;  // i.e., no fit makes sense, if nSrc=0.
+  }
+  */
+
+  chiSq_ = 2.*logLambdaBest_;
+
+  double p_temp;
+  chisq_prob(chiSq_, ndof_, &p_temp, &chiSqProb_);
+
+  estProb_ = chiSqProb_ / 2.;  // one-sided chi-sq prob
+
+  stopwatch_MaximizeLlh_.Stop();
+}
+
+
+// This is clumsy but seems like the only way to get this info
+void NewLlhSN::StoreLogLambdaBest() 
+{
+  Double_t amin, edm, errdef;
+  Int_t nvpar, nparx;
+  minuit_->GetStats(amin, edm, errdef, nvpar, nparx);
+  logLambdaBest_ = -amin;  // that is, max llh = - (minimizer result)
+
+  // The *worst* logLambdaBest should be zero (i.e. null hypothesis).
+  // But minimizer will miss exact zero, leading logLambdaBest_ to be slightly
+  // negative. Since this will cause probability calculation to choke, we 
+  // fix it here
+  if (logLambdaBest_ < 0.) { logLambdaBest_ = 0.;}
+}
+
+
+double NewLlhSN::EvalFCN(const vector<double>& parVect) const {
+  cout << "going to ()" << endl;
+  return (*fcn_)(parVect);
+}
+
+
+
+double NewLlhSN::EvaluateLlh(double nSrc, double lag, double threshold) {
+  vector<double> parVect;
+  parVect.push_back(nSrc);
+  parVect.push_back(lag);
+  parVect.push_back(threshold);
+  
+  cout << "going to EvalFCN" << endl;
+  
+  double minusLlh = EvalFCN(parVect);
+  return -minusLlh;   // that is, max llh = - (minimizer result)
+}
+
+
+
+
+// TGraph* NewLlhSN::GetContour(double sigma, int npoints, int pa1, int pa2) {
+//   minuit_->SetFCN(MinuitWrapperFCN);
+//   SetMinuitWrapperPtr(this);  // point to *our* EvalMinuitFCN
+
+//   minuit_->SetErrorDef(sigma*sigma);
+//   TGraph* g = dynamic_cast<TGraph*> (minuit_->Contour(npoints, pa1, pa2));
+
+//   SetMinuitWrapperPtr(NULL);  // reset pointer
+//   return g;
+// }
+

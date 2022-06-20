@@ -1,0 +1,22 @@
+
+{
+  #ifndef LOADED_ROOTEXT_
+  #define LOADED_ROOTEXT_
+
+  gROOT->Macro( gSystem->ExpandPathName("$LAB_PRELOAD") );
+
+
+  // DEPENDENCIES
+
+  // rootExt has no dependencies
+
+
+  // BUILD
+
+  if (LOADSUCCESS) {
+    gROOT->ProcessLine(".L $LAB_MAIN_DIR/rootExt/build_rootExt.C");
+    LOADSUCCESS = build_rootExt();
+  }
+
+  #endif // LOADED_ROOTEXT_
+}
