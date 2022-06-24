@@ -30,6 +30,8 @@ public:
   vector<double> sigmaErr_;
   vector<double> timeErr_;
   Double_t nsSet_[5];
+  Double_t fluenceScale_;
+  Double_t fluxScale_;
   Int_t nFlares_;
 
   bool branchesNotSet_;
@@ -50,14 +52,15 @@ public:
     rndOnlyTimes_ = b;
   }
 
-  void Initialize(int ns, double srcRA, double srcDEC, int nset){
+  void Initialize(int ns, double srcRA, double srcDEC, int nset, double fluencescale, double fluxscale){
     ns_     = ns;
     srcRA_  = srcRA;
     srcDEC_ = srcDEC;
     injRA_  = srcRA_;
     injDEC_ = srcDEC_;
     nset_   = nset;
-   
+    fluenceScale_ = fluencescale;
+    fluxScale_    = fluxscale;
   }
   void Execute(MultiArk& ark, MultiGaussAnalysisFn& llh);
   bool Write(char *filename, char* fileoption);
@@ -107,6 +110,8 @@ void SimpleAnalysis_multiSet::Execute(MultiArk& ark, MultiGaussAnalysisFn& llh)
     tFitCoord.Branch("runID",&runID);
     tFitCoord.Branch("srcRA",&srcRA_, "srcRA/D");
     tFitCoord.Branch("srcDEC",&srcDEC_, "srcDEC/D");
+    tFitCoord.Branch("fluenceScale",&fluenceScale_, "fluenceScale/D");
+    tFitCoord.Branch("fluxScale",&fluxScale_, "fluxScale/D");
     branchesNotSet_=false;
   }
 

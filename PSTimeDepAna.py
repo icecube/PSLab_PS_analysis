@@ -258,11 +258,17 @@ if __name__ == "__main__":
     pt.SetTranslator(ROOT.mas)
     maf.SetParTranslator(pt)
 
+    ####### Calculate ns/fluence and ns/flux ratio #######
+    fluenceScale = ROOT.mas.GetMeanSrcNev() #ns/fluence ratio, normalization at 1 GeV, units: GeV cm^2
+    fluxScale    = 86400*ROOT.TMath.Sqrt(2*ROOT.TMath.Pi())*sigmaT*ROOT.mas.GetMeanSrcNevTime() #ns/flux ratio, normalization at 1 GeV, units: GeV cm^2 s
+    print('ns/fluence scale factor = {:.2e}'.format(fluenceScale))
+    print('ns/flux scale factor = {:.2e}'.format(fluxScale))
+
     gROOT.ProcessLine(".L SimpleAnalysisPS.C+")
     gROOT.ProcessLine("SimpleAnalysis_multiSet mps;") 
     ROOT.mps.SetRndOnlyTimes(False)
     print("initializing histos..")
-    ROOT.mps.Initialize(ns, srcRA, srcDEC, 5)
+    ROOT.mps.Initialize(ns, srcRA, srcDEC, 5, fluenceScale, fluxScale)
     if ROOT.OPT_USEREALDATA == True:
         ROOT.mps.SetDoUnblind()
 
