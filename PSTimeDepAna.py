@@ -259,7 +259,7 @@ if __name__ == "__main__":
     maf.SetParTranslator(pt)
 
     ####### Calculate ns/fluence and ns/flux ratio #######
-    fluenceScale = ROOT.mas.GetMeanSrcNev() #ns/fluence ratio, normalization at 1 GeV, units: GeV cm^2
+    fluenceScale = ROOT.mas.GetMeanSrcNevTime() #ns/fluence ratio, normalization at 1 GeV, units: GeV cm^2
     fluxScale    = 86400*ROOT.TMath.Sqrt(2*ROOT.TMath.Pi())*sigmaT*ROOT.mas.GetMeanSrcNevTime() #ns/flux ratio, normalization at 1 GeV, units: GeV cm^2 s
     print('ns/fluence scale factor = {:.2e}'.format(fluenceScale))
     print('ns/flux scale factor = {:.2e}'.format(fluxScale))
